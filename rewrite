@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+
+import gi
+gi.require_version('Json', '1.0')
+
+from gi.repository import Json
+from ruamel import yaml
+import os, sys
+
+from contextlib import contextmanager
+
+def rewrite_json_manifest(filename, config):
+    with open(filename) as f:
+        data = Json.from_string(f.read())
+
+    mods = data.get_object().get_array_member('modules')
+    for i in range(mods.get_length()):
+        mod = mods.get_element(i)
+        if mod.get_node_type() != Json.NodeType.OBJECT:
+            continue
+        mod = mod.get_object()
+
+        if mod.get_string_member('name') == modulename:
+            sources = mod.get_array_member('sources')
+            new_sources = Json.Array()
+            for i in range(sources.get_length()):
+                if sources.get_object_element(i).get_string_member('type') != 'git':
+                    new_sources.add_object_element(sources.get_object_element(i))
+                    continue
+
+                path = os.path.relpath('.', os.path.dirname(manifestfile))
+                new_sources.add_element(Json.from_string('{"type": "dir", "path": "%s"}' % path))
+
+            mod.set_array_member('sources', new_sources)
+
+            if config:
+                newconfig = Json.Array.sized_new(len(config))
+                for arg in config:
+                    newconfig.add_string_element(arg)
+                mod.set_array_member('config-opts', newconfig)
+
+    with open(filename, 'w') as f:
+        f.write(Json.to_string(data, True))
+
+def rewrite_yaml_manifest(filename, config):
+    with open(filename) as f:
+        data = yaml.round_trip_load(f, preserve_quotes=True)
+
+    for mod in data['modules']:
+        if not isinstance(mod, dict):
+            continue
+
+        if mod['name'] == modulename:
+            for i in range(len(mod['sources'])):
+                if mod['sources'][i]['type'] != 'git':
+                    continue
+                path = os.path.relpath('.', os.path.dirname(manifestfile))
+                mod['sources'][i] = {'type': 'dir', 'path': path}
+
+                if config:
+                    mod['config-opts'] = config
+
+    with open(filename, 'w') as f:
+        yaml.round_trip_dump(data, f)
+
+if __name__ == '__main__':
+    try:
+        manifestfile = sys.argv[1]
+        modulename = sys.argv[2]
+        config = sys.argv[3:]
+    except ValueError:
+        print("usage: {} flatpak_manifest module_name [config-opt ...]".format(sys.argv[0]))
+        sys.exit(1)
+
+    if manifestfile.endswith('.json'):
+        rewrite_json_manifest(manifestfile, config)
+    else:
+        rewrite_yaml_manifest(manifestfile, config)

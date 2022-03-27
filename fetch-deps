@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+
+import urllib.request
+import gi
+gi.require_version('Json', '1.0')
+import os, sys
+
+from gi.repository import Json
+
+
+if __name__ == '__main__':
+
+    kde_master_base_url = "https://invent.kde.org/packaging/flatpak-kde-applications/-/raw/master/"
+    urllib.request.urlretrieve(f"{sys.argv[1]}", "ci-source-manifest.json")
+
+    with open("ci-source-manifest.json") as f:
+        data = Json.from_string(f.read())
+
+    mods = data.get_object().get_array_member('modules')
+    for i in range(mods.get_length()):
+        mod = mods.get_element(i)
+        if mod.get_node_type() == Json.NodeType.VALUE:
+            filename = Json.to_string(mod, True)[1:-1]
+            urllib.request.urlretrieve(f"{kde_master_base_url}{filename}", filename)
+
+
